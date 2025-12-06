@@ -4,6 +4,7 @@ from typing import Iterable, Optional, Set, Tuple
 
 import torch
 
+from sglang.srt.model_executor.forward_batch_info import ForwardBatch
 from sglang.srt.utils.hf_transformers_utils import AutoConfig
 
 
@@ -132,3 +133,26 @@ def get_target_module_name(full_module_name: str, target_modules: Set[str]) -> s
 
 
 ROW_PARALLELISM_LINEAR_LORA_NAMES = ["o_proj", "down_proj"]
+
+
+def generate_sequence_lengths(forward_batch: ForwardBatch) -> torch.Tensor:
+    if forward_batch.forward_mode.is_decode():
+        seg_lens_cpu = torch.ones(
+            forward_batch.batch_size, dtype=torch.int32, device="cpu"
+        )
+    elif forward_batch.forward_mode.is_target_verify():
+        seg_lens_cpu = torch.full(
+            size=(forward_batch.batch_size,),
+            fill_value=forward_batch.spec_info.draft_token_num,
+            dtype=torch.int32,
+            device="cpu",
+        )
+    elif forward_batch.forward_mode.is_extend():
+        seg_lens_cpu = torch.tensor(
+            forward_batch.extend_seq_lens_cpu,
+            dtype=torch.int32,
+            device="cpu",
+        )
+    else:
+        raise ValueError(f"Unsupported forward mode: {forward_batch.forward_mode}")
+    return seg_lens_cpu
