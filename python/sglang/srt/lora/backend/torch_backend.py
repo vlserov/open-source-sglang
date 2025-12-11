@@ -34,18 +34,18 @@ class TorchNativeLoRABackend(BaseLoRABackend):
         self, x: torch.Tensor, weights: torch.Tensor, *args, **kwargs
     ) -> torch.Tensor:
         total_seq_len, _ = x.shape
-        if sum(self.batch_info.lora_ranks_cpu[self.batch_info.weight_indices_cpu]):
+        if sum(self.batch_info.lora_ranks_cpu[self.batch_info.weight_indices_cpu]) == 0:
             return torch.zeros(total_seq_len, 0, dtype=x.dtype, device=x.device)
-        permutation = self.cuda_graph_batch_info.permutation
-        permutation_reordered = self.cuda_graph_batch_info.permutation_reordered
+        permutation = self.batch_info.permutation
+        permutation_reordered = self.batch_info.permutation_reordered
         reordered_x = x[permutation]
 
         output_tensor = sgemm_lora_a_fwd(
             inputs=reordered_x,
             weights=weights,
-            seq_len_tensor=self.batch_info.seq_lens_cpu,
+            seq_len_tensor=self.batch_info.seg_lens_cpu,
             lora_ranks=self.batch_info.lora_ranks_cpu,
-            scaling=self.batch_info.scalings,
+            scaling_tensor=self.batch_info.scalings,
             num_slices=1,
         )
 
@@ -62,7 +62,7 @@ class TorchNativeLoRABackend(BaseLoRABackend):
         total_seq_len, _ = x.shape
         _, weight_out_dim, _ = weights.shape
 
-        if sum(self.batch_info.lora_ranks_cpu[self.batch_info.weight_indices_cpu]):
+        if sum(self.batch_info.lora_ranks_cpu[self.batch_info.weight_indices_cpu]) == 0:
             return (
                 torch.zeros(
                     total_seq_len, weight_out_dim, dtype=x.dtype, device=x.device
@@ -71,14 +71,14 @@ class TorchNativeLoRABackend(BaseLoRABackend):
                 else base_output
             )
 
-        permutation = self.cuda_graph_batch_info.permutation
-        permutation_reordered = self.cuda_graph_batch_info.permutation_reordered
+        permutation = self.batch_info.permutation
+        permutation_reordered = self.batch_info.permutation_reordered
         reordered_x = x[permutation]
 
         output_tensor = sgemm_lora_b_fwd(
             inputs=reordered_x,
             weights=weights,
-            seg_lens_tensor=self.batch_info.seg_lens_cpu,
+            seq_len_tensor=self.batch_info.seg_lens_cpu,
             lora_ranks=self.batch_info.lora_ranks_cpu,
             slice_offsets=torch.tensor(
                 [0, weight_out_dim], dtype=torch.int32, device="cpu"
@@ -108,7 +108,7 @@ class TorchNativeLoRABackend(BaseLoRABackend):
         _, weight_out_dim, _ = qkv_lora_b.shape
         max_rank = weight_intermediate_dim // num_slices
 
-        if sum(self.batch_info.lora_ranks_cpu[self.batch_info.weight_indices_cpu]):
+        if sum(self.batch_info.lora_ranks_cpu[self.batch_info.weight_indices_cpu]) == 0:
             return (
                 torch.zeros(
                     total_seq_len, weight_out_dim, dtype=x.dtype, device=x.device
@@ -117,16 +117,16 @@ class TorchNativeLoRABackend(BaseLoRABackend):
                 else base_output
             )
 
-        permutation = self.cuda_graph_batch_info.permutation
-        permutation_reordered = self.cuda_graph_batch_info.permutation_reordered
+        permutation = self.batch_info.permutation
+        permutation_reordered = self.batch_info.permutation_reordered
         reordered_x = x[permutation]
 
         lora_a_output = sgemm_lora_a_fwd(
             inputs=reordered_x,
             weights=qkv_lora_a,
-            seq_len_tensor=self.batch_info.seq_lens_cpu,
+            seq_len_tensor=self.batch_info.seg_lens_cpu,
             lora_ranks=self.batch_info.lora_ranks_cpu,
-            scaling=self.batch_info.scalings,
+            scaling_tensor=self.batch_info.scalings,
             num_slices=3,
         )
 
@@ -160,7 +160,7 @@ class TorchNativeLoRABackend(BaseLoRABackend):
         slice_size = weight_out_dim // num_slices
         max_rank = weight_intermediate_dim // num_slices
 
-        if sum(self.batch_info.lora_ranks_cpu[self.batch_info.weight_indices_cpu]):
+        if sum(self.batch_info.lora_ranks_cpu[self.batch_info.weight_indices_cpu]) == 0:
             return (
                 torch.zeros(
                     total_seq_len, weight_out_dim, dtype=x.dtype, device=x.device
@@ -169,23 +169,23 @@ class TorchNativeLoRABackend(BaseLoRABackend):
                 else base_output
             )
 
-        permutation = self.cuda_graph_batch_info.permutation
-        permutation_reordered = self.cuda_graph_batch_info.permutation_reordered
+        permutation = self.batch_info.permutation
+        permutation_reordered = self.batch_info.permutation_reordered
         reordered_x = x[permutation]
 
         lora_a_output = sgemm_lora_a_fwd(
             inputs=reordered_x,
             weights=gate_up_lora_a,
-            seq_len_tensor=self.batch_info.seq_lens_cpu,
+            seq_len_tensor=self.batch_info.seg_lens_cpu,
             lora_ranks=self.batch_info.lora_ranks_cpu,
-            scaling=self.batch_info.scalings,
+            scaling_tensor=self.batch_info.scalings,
             num_slices=3,
         )
 
         output_tensor = sgemm_lora_b_fwd(
             inputs=lora_a_output,
             weights=gate_up_lora_b,
-            seg_lens_tensor=self.batch_info.seg_lens_cpu,
+            seq_len_tensor=self.batch_info.seg_lens_cpu,
             lora_ranks=self.batch_info.lora_ranks_cpu,
             slice_offsets=torch.tensor(
                 [0, slice_size, weight_out_dim], dtype=torch.int32, device="cpu"
@@ -318,7 +318,7 @@ class TorchNativeLoRABackend(BaseLoRABackend):
             batch_info.bs = forward_batch.batch_size
             batch_info.num_segments = forward_batch.batch_size
         else:
-            max_len = seg_lens_cpu
+            max_len = max(seg_lens_cpu)
             max_seq_len = sum(seg_lens_cpu)
 
             batch_info = TorchNativeLoRABatchInfo(
