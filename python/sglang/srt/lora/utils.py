@@ -154,24 +154,30 @@ EMBEDDING_NAMES = ["embed_tokens", "lm_head"]
 ROW_PARALLELISM_LINEAR_LORA_NAMES = ["o_proj", "down_proj"]
 
 
-def generate_sequence_lengths(forward_batch: ForwardBatch) -> torch.Tensor:
-    if forward_batch.forward_mode.is_decode():
-        seg_lens_cpu = torch.ones(
-            forward_batch.batch_size, dtype=torch.int32, device="cpu"
-        )
-    elif forward_batch.forward_mode.is_target_verify():
-        seg_lens_cpu = torch.full(
-            size=(forward_batch.batch_size,),
-            fill_value=forward_batch.spec_info.draft_token_num,
-            dtype=torch.int32,
-            device="cpu",
-        )
-    elif forward_batch.forward_mode.is_extend():
-        seg_lens_cpu = torch.tensor(
-            forward_batch.extend_seq_lens_cpu,
-            dtype=torch.int32,
-            device="cpu",
-        )
-    else:
-        raise ValueError(f"Unsupported forward mode: {forward_batch.forward_mode}")
-    return seg_lens_cpu
+def generate_sequence_lengths(
+    forward_batch: ForwardBatch, device: Optional[torch.device] = None
+) -> torch.Tensor:
+
+    device = torch.get_default_device() if device is None else device
+    with torch.device(device):
+        if forward_batch.forward_mode.is_decode():
+            seg_lens = torch.ones(forward_batch.batch_size, dtype=torch.int32)
+        elif forward_batch.forward_mode.is_target_verify():
+            seg_lens = torch.full(
+                size=(forward_batch.batch_size,),
+                fill_value=forward_batch.spec_info.draft_token_num,
+                dtype=torch.int32,
+            )
+        elif forward_batch.forward_mode.is_extend():
+            extend_seq_lens = (
+                forward_batch.extend_seq_lens_cpu
+                if forward_batch.extend_seq_lens_cpu.device == device
+                else forward_batch.extend_seq_lens
+            )
+            seg_lens = torch.tensor(
+                extend_seq_lens,
+                dtype=torch.int32,
+            )
+        else:
+            raise ValueError(f"Unsupported forward mode: {forward_batch.forward_mode}")
+    return seg_lens

@@ -6,6 +6,7 @@ import torch
 def sgemm_lora_a_fwd(
     inputs: torch.Tensor,
     weights: torch.Tensor,
+    weight_indices: torch.Tensor,
     seq_len_tensor: torch.Tensor,
     lora_ranks: torch.Tensor,
     scaling_tensor: torch.Tensor,
@@ -23,23 +24,21 @@ def sgemm_lora_a_fwd(
     )
 
     token_offset = 0
-    for lora_idx in range(num_loras):
-        seq_len = seq_len_tensor[lora_idx]
+    for lora_idx, seq_len, rank in zip(
+        weight_indices, seq_len_tensor, lora_ranks[weight_indices]
+    ):
         if seq_len == 0:
             continue
 
-        rank = lora_ranks[lora_idx]
-        if rank == 0:
-            token_offset += seq_len
-            continue
+        if rank > 0:
 
-        x_seq = inputs[token_offset : token_offset + seq_len, :]
-        w_seq = weights[lora_idx, : num_slices * rank, :]
+            x_seq = inputs[token_offset : token_offset + seq_len, :]
+            w_seq = weights[lora_idx, : num_slices * rank, :]
 
-        result = torch.einsum("si, oi -> so", x_seq, w_seq)
-        output[token_offset : token_offset + seq_len, : num_slices * rank] = (
-            scaling_tensor[lora_idx] * result
-        )
+            result = torch.einsum("si, oi -> so", x_seq, w_seq)
+            output[token_offset : token_offset + seq_len, : num_slices * rank] = (
+                scaling_tensor[lora_idx] * result
+            )
 
         token_offset += seq_len
 
@@ -49,6 +48,7 @@ def sgemm_lora_a_fwd(
 def sgemm_lora_b_fwd(
     inputs: torch.Tensor,
     weights: torch.Tensor,
+    weight_indices: torch.Tensor,
     seq_len_tensor: torch.Tensor,
     lora_ranks: torch.Tensor,
     slice_offsets: torch.Tensor,
@@ -73,12 +73,12 @@ def sgemm_lora_b_fwd(
         )
 
     token_offset = 0
-    for lora_idx in range(num_loras):
-        seq_len = seq_len_tensor[lora_idx]
+    for lora_idx, seq_len, rank in zip(
+        weight_indices, seq_len_tensor, lora_ranks[weight_indices]
+    ):
         if seq_len == 0:
             continue
 
-        rank = lora_ranks[lora_idx]
         if rank == 0:
             token_offset += seq_len
             continue
