@@ -177,11 +177,12 @@ class TestChunkedSGMV(unittest.TestCase):
         def create_mock_batch():
             # Create a minimal mock ForwardBatch for the test
             class MockForwardBatch:
-                def __init__(self, batch_size, seq_lengths):
+                def __init__(self, batch_size, seq_lengths, device):
                     self.batch_size = batch_size
-                    self.extend_seq_lens_cpu = torch.tensor(
-                        seq_lengths, dtype=torch.int32, device="cpu"
+                    self.extend_seq_lens = torch.tensor(
+                        seq_lengths, dtype=torch.int32, device=device
                     )
+                    self.extend_seq_lens_cpu = seq_lengths
                     self.forward_mode = MockForwardMode()
 
             class MockForwardMode:
@@ -197,7 +198,7 @@ class TestChunkedSGMV(unittest.TestCase):
                 def is_prefill(self):
                     return self.is_extend()
 
-            return MockForwardBatch(len(seq_lengths), seq_lengths)
+            return MockForwardBatch(len(seq_lengths), seq_lengths, self.device)
 
         mock_batch = create_mock_batch()
 
@@ -490,7 +491,7 @@ class TestChunkedSGMV(unittest.TestCase):
                     num_slices=3,
                 )
 
-                lora_b_weights = [weights[name][1] for name in sorted(weights.keys())]
+                lora_b_weights = [weight[1] for weight in weights]
                 stacked_lora_b = self.stack_lora_weights(
                     lora_b_weights, is_lora_a=False
                 )
