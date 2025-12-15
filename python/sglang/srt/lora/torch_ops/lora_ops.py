@@ -7,7 +7,7 @@ def sgemm_lora_a_fwd(
     inputs: torch.Tensor,
     weights: torch.Tensor,
     weight_indices: torch.Tensor,
-    seq_len_tensor: torch.Tensor,
+    seg_len_tensor: torch.Tensor,
     lora_ranks: torch.Tensor,
     scaling_tensor: torch.Tensor,
     num_slices: int = 1,
@@ -25,7 +25,7 @@ def sgemm_lora_a_fwd(
 
     token_offset = 0
     for lora_idx, seq_len, rank in zip(
-        weight_indices, seq_len_tensor, lora_ranks[weight_indices]
+        weight_indices, seg_len_tensor, lora_ranks[weight_indices]
     ):
         if seq_len == 0:
             continue
@@ -49,7 +49,7 @@ def sgemm_lora_b_fwd(
     inputs: torch.Tensor,
     weights: torch.Tensor,
     weight_indices: torch.Tensor,
-    seq_len_tensor: torch.Tensor,
+    seg_len_tensor: torch.Tensor,
     lora_ranks: torch.Tensor,
     slice_offsets: torch.Tensor,
     base_output: Optional[torch.Tensor] = None,
@@ -74,7 +74,7 @@ def sgemm_lora_b_fwd(
 
     token_offset = 0
     for lora_idx, seq_len, rank in zip(
-        weight_indices, seq_len_tensor, lora_ranks[weight_indices]
+        weight_indices, seg_len_tensor, lora_ranks[weight_indices]
     ):
         if seq_len == 0:
             continue

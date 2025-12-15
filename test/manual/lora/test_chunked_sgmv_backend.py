@@ -166,17 +166,13 @@ class TestChunkedSGMV(unittest.TestCase):
 
     def create_batch_info(
         self,
+        lora_names: List[str],
         seq_lengths: List[int],
         lora_assignments: List[Optional[int]],
         batch_mode: BatchMode = BatchMode.PREFILL,
     ) -> LoRABatchInfo:
         """Create LoRABatchInfo using the same logic as chunked backend"""
-        unique_loras = sorted(set(lora_assignments))
-        lora_name_to_idx = {name: idx for idx, name in enumerate(unique_loras)}
-
-        seq_weight_indices = [lora_name_to_idx[name] for name in lora_assignments]
-
-        lora_ranks = [self.lora_configs[name][0] for name in unique_loras]
+        lora_ranks = [self.lora_configs[name][0] for name in lora_names]
 
         def create_mock_batch():
             # Create a minimal mock ForwardBatch for the test
@@ -207,7 +203,7 @@ class TestChunkedSGMV(unittest.TestCase):
 
         # Use the same functions as chunked backend
         permutation, weights_reordered = ChunkedSgmvLoRABackend._get_permutation(
-            seq_weight_indices, mock_batch
+            lora_assignments, mock_batch
         )
 
         # Create a minimal backend instance to access _get_segments_info
@@ -222,7 +218,7 @@ class TestChunkedSGMV(unittest.TestCase):
             chunk_size=CHUNK_SIZE,
         )
 
-        scalings = [1.0] * len(unique_loras)
+        scalings = [1.0] * len(lora_names)
         seg_indptr_tensor = seg_indptr.to(self.device)
         weight_indices_tensor = weight_indices_list.to(self.device)
         lora_ranks_tensor = (
@@ -311,7 +307,7 @@ class TestChunkedSGMV(unittest.TestCase):
         )
         if batch_composition == BatchComposition.UNIFORM:
             lora_names = ["lora_A"]
-            lora_assignments = lora_names * batch_size
+            lora_assignments = [lora_names.index("lora_A")] * batch_size
         elif batch_composition == BatchComposition.MIXED:
             lora_names = ["lora_A", "lora_B", "lora_C", None]
             lora_assignments = [(i % len(lora_names)) for i in range(batch_size)]
@@ -340,7 +336,9 @@ class TestChunkedSGMV(unittest.TestCase):
         for lora_name in normalized_lora_names:
             weights.append(self.create_lora_weights(lora_name, include_missing_k))
 
-        batch_info = self.create_batch_info(seq_lengths, lora_assignments, batch_mode)
+        batch_info = self.create_batch_info(
+            normalized_lora_names, seq_lengths, lora_assignments, batch_mode
+        )
 
         return x, weights, batch_info, seq_lengths, lora_assignments
 

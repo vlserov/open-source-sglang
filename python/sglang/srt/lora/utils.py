@@ -169,14 +169,13 @@ def generate_sequence_lengths(
                 dtype=torch.int32,
             )
         elif forward_batch.forward_mode.is_extend():
-            extend_seq_lens = (
-                forward_batch.extend_seq_lens_cpu
-                if forward_batch.extend_seq_lens_cpu.device == device
-                else forward_batch.extend_seq_lens
-            )
-            seg_lens = torch.tensor(
-                extend_seq_lens,
-                dtype=torch.int32,
+            seg_lens = (
+                forward_batch.extend_seq_lens
+                if forward_batch.extend_seq_lens.device == device
+                else torch.tensor(
+                    forward_batch.extend_seq_lens_cpu,
+                    dtype=torch.int32,
+                )
             )
         else:
             raise ValueError(f"Unsupported forward mode: {forward_batch.forward_mode}")

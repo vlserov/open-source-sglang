@@ -38,13 +38,11 @@ class TorchNativeLoRABackend(BaseLoRABackend):
     def run_lora_a_sgemm(
         self, x: torch.Tensor, weights: torch.Tensor, *args, **kwargs
     ) -> torch.Tensor:
-        total_seq_len, _ = x.shape
-
         output_tensor = sgemm_lora_a_fwd(
             inputs=x,
             weights=weights,
             weight_indices=self.batch_info.weight_indices_cpu,
-            seq_len_tensor=self.batch_info.seg_lens_cpu,
+            seg_len_tensor=self.batch_info.seg_lens_cpu,
             lora_ranks=self.batch_info.lora_ranks_cpu,
             scaling_tensor=self.batch_info.scalings,
             num_slices=1,
@@ -60,27 +58,17 @@ class TorchNativeLoRABackend(BaseLoRABackend):
         *args,
         **kwargs,
     ) -> torch.Tensor:
-        total_seq_len, _ = x.shape
         _, weight_out_dim, _ = weights.shape
-
-        if sum(self.batch_info.lora_ranks_cpu[self.batch_info.weight_indices_cpu]) == 0:
-            return (
-                torch.zeros(
-                    total_seq_len, weight_out_dim, dtype=x.dtype, device=x.device
-                )
-                if base_output is None
-                else base_output
-            )
-
+        output_offset = torch.tensor(
+            [0, weight_out_dim], dtype=torch.int32, device="cpu"
+        )
         output_tensor = sgemm_lora_b_fwd(
             inputs=x,
             weights=weights,
             weight_indices=self.batch_info.weight_indices_cpu,
-            seq_len_tensor=self.batch_info.seg_lens_cpu,
+            seg_len_tensor=self.batch_info.seg_lens_cpu,
             lora_ranks=self.batch_info.lora_ranks_cpu,
-            slice_offsets=torch.tensor(
-                [0, weight_out_dim], dtype=torch.int32, device="cpu"
-            ),
+            slice_offsets=output_offset,
             base_output=base_output,
         )
 
@@ -98,38 +86,22 @@ class TorchNativeLoRABackend(BaseLoRABackend):
         *args,
         **kwargs,
     ) -> torch.Tensor:
-        num_slices = 3
-        assert isinstance(qkv_lora_b, torch.Tensor)
-
-        total_seq_len, _ = x.shape
-        _, weight_intermediate_dim, _ = qkv_lora_a.shape
-        _, weight_out_dim, _ = qkv_lora_b.shape
-        max_rank = weight_intermediate_dim // num_slices
-
-        if sum(self.batch_info.lora_ranks_cpu[self.batch_info.weight_indices_cpu]) == 0:
-            return (
-                torch.zeros(
-                    total_seq_len, weight_out_dim, dtype=x.dtype, device=x.device
-                )
-                if base_output is None
-                else base_output
-            )
-
+        num_slices = len(output_offset_cpu) - 1
         lora_a_output = sgemm_lora_a_fwd(
             inputs=x,
             weights=qkv_lora_a,
             weight_indices=self.batch_info.weight_indices_cpu,
-            seq_len_tensor=self.batch_info.seg_lens_cpu,
+            seg_len_tensor=self.batch_info.seg_lens_cpu,
             lora_ranks=self.batch_info.lora_ranks_cpu,
             scaling_tensor=self.batch_info.scalings,
-            num_slices=3,
+            num_slices=num_slices,
         )
 
         output_tensor = sgemm_lora_b_fwd(
             inputs=lora_a_output,
             weights=qkv_lora_b,
             weight_indices=self.batch_info.weight_indices_cpu,
-            seg_lens_tensor=self.batch_info.seg_lens_cpu,
+            seg_len_tensor=self.batch_info.seg_lens_cpu,
             lora_ranks=self.batch_info.lora_ranks_cpu,
             slice_offsets=output_offset_cpu,
             base_output=base_output,
@@ -146,44 +118,30 @@ class TorchNativeLoRABackend(BaseLoRABackend):
         *args,
         **kwargs,
     ) -> torch.Tensor:
-
         num_slices = 2
-        assert isinstance(gate_up_lora_b, torch.Tensor)
-
-        total_seq_len, _ = x.shape
-        _, weight_intermediate_dim, _ = gate_up_lora_a.shape
         _, weight_out_dim, _ = gate_up_lora_b.shape
         slice_size = weight_out_dim // num_slices
-        max_rank = weight_intermediate_dim // num_slices
-
-        if sum(self.batch_info.lora_ranks_cpu[self.batch_info.weight_indices_cpu]) == 0:
-            return (
-                torch.zeros(
-                    total_seq_len, weight_out_dim, dtype=x.dtype, device=x.device
-                )
-                if base_output is None
-                else base_output
-            )
+        output_offset = torch.tensor(
+            [0, slice_size, weight_out_dim], dtype=torch.int32, device="cpu"
+        )
 
         lora_a_output = sgemm_lora_a_fwd(
             inputs=x,
             weights=gate_up_lora_a,
             weight_indices=self.batch_info.weight_indices_cpu,
-            seq_len_tensor=self.batch_info.seg_lens_cpu,
+            seg_len_tensor=self.batch_info.seg_lens_cpu,
             lora_ranks=self.batch_info.lora_ranks_cpu,
             scaling_tensor=self.batch_info.scalings,
-            num_slices=3,
+            num_slices=num_slices,
         )
 
         output_tensor = sgemm_lora_b_fwd(
             inputs=lora_a_output,
             weights=gate_up_lora_b,
             weight_indices=self.batch_info.weight_indices_cpu,
-            seq_len_tensor=self.batch_info.seg_lens_cpu,
+            seg_len_tensor=self.batch_info.seg_lens_cpu,
             lora_ranks=self.batch_info.lora_ranks_cpu,
-            slice_offsets=torch.tensor(
-                [0, slice_size, weight_out_dim], dtype=torch.int32, device="cpu"
-            ),
+            slice_offsets=output_offset,
             base_output=base_output,
         )
 
@@ -233,7 +191,7 @@ class TorchNativeLoRABackend(BaseLoRABackend):
 
         unique_weight_indices_tensor, inverse_weight_indices_tensor = (
             torch.unique_consecutive(
-                original_weight_indices_tensor, sorted=True, return_inverse=True
+                original_weight_indices_tensor, return_inverse=True
             )
         )
 
@@ -304,8 +262,10 @@ class TorchNativeLoRABackend(BaseLoRABackend):
             scalings_tensor, non_blocking=True
         )
         batch_info.weight_indices[:bs].copy_(weight_indices_tensor, non_blocking=True)
-        batch_info.seg_indptr[: (bs + 1)].copy_(seg_indptr_cpu, non_blocking=True)
-        batch_info.seg_lens[:(bs)].copy_(seg_lens_cpu, non_blocking=True)
+        batch_info.seg_indptr[: len(seg_indptr_cpu)].copy_(
+            seg_indptr_cpu, non_blocking=True
+        )
+        batch_info.seg_lens[: len(seg_lens_cpu)].copy_(seg_lens_cpu, non_blocking=True)
 
         batch_info.lora_ranks_cpu = lora_ranks_tensor
         batch_info.seg_indptr_cpu = seg_indptr_cpu
