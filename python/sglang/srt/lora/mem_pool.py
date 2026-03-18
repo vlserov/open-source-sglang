@@ -68,6 +68,7 @@ class LoRAMemoryPool:
         self.lora_added_tokens_size: int = lora_added_tokens_size
         self.max_lora_rank: int = max_lora_rank
         self.target_modules: Set[str] = target_modules
+        self.padding_to_max_lora_rank = True
 
         # Initialize eviction policy
         self.eviction_policy = get_eviction_policy(eviction_policy)
@@ -445,8 +446,13 @@ class LoRAMemoryPool:
             for name, weights in temp_A_buffer.items():
                 c = get_stacked_multiply(name)
                 target_buffer = self.A_buffer[name][layer_id]
-                buffer_view = target_buffer[buffer_id, : lora_rank * c, :]
-                load_lora_weight_tensor(buffer_view, weights)
+                if self.padding_to_max_lora_rank:
+                    for idx in range(c):
+                        buffer_view = target_buffer[buffer_id, idx * self.max_lora_rank : idx * self.max_lora_rank + lora_rank, :]
+                        load_lora_weight_tensor(buffer_view, weights[idx * lora_rank : (idx + 1) * lora_rank, :])
+                else:
+                    buffer_view = target_buffer[buffer_id, : lora_rank * c, :]
+                    load_lora_weight_tensor(buffer_view, weights)
 
             for name, weights in temp_B_buffer.items():
                 target_buffer = self.B_buffer[name][layer_id]

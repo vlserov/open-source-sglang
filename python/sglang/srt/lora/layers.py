@@ -68,10 +68,16 @@ class VocabParallelEmbeddingWithLoRA(BaseLayerWithLoRA):
         self.embed_dim = base_layer.embedding_dim
         self.vocab_size = base_layer.org_vocab_size
 
+        offsets = [0, self.embed_dim]
         self.output_offset = torch.tensor(
-            [0, self.embed_dim],
+            offsets,
             dtype=torch.int32,
             device=next(base_layer.parameters()).device,
+        )
+        self.output_offset_cpu = torch.tensor(
+            offsets,
+            dtype=torch.int32,
+            device="cpu",
         )
 
     def set_lora_info(
@@ -102,6 +108,7 @@ class VocabParallelEmbeddingWithLoRA(BaseLayerWithLoRA):
             x=lora_a_output,
             weights=self.embedding_B_buffer,
             output_offset=self.output_offset,
+            output_offset_cpu=self.output_offset_cpu,
             base_output=base_output,
         )
         return lora_output
@@ -224,10 +231,16 @@ class ParallelLMHeadWithLoRA(BaseLayerWithLoRA):
         self.weight = base_layer.weight
         self.embed_dim = base_layer.embedding_dim
         self.vocab_size = base_layer.org_vocab_size
+        offsets = [0, self.vocab_size]
         self.output_offset = torch.tensor(
-            [0, self.vocab_size],
+            offsets,
             dtype=torch.int32,
             device=next(base_layer.parameters()).device,
+        )
+        self.output_offset_cpu = torch.tensor(
+            offsets,
+            dtype=torch.int32,
+            device="cpu",
         )
 
     def set_lora_info(
@@ -260,6 +273,7 @@ class ParallelLMHeadWithLoRA(BaseLayerWithLoRA):
             x=lora_a_output,
             weights=self.lm_head_B_buffer,
             output_offset=self.output_offset,
+            output_offset_cpu=self.output_offset_cpu,
             base_output=base_output,
         )
 
@@ -306,13 +320,16 @@ class ColumnParallelLinearWithLoRA(BaseLayerWithLoRA):
     ) -> None:
         super().__init__(base_layer, lora_backend)
         shard_size = self.base_layer.output_partition_sizes[0]
+        offsets = [0, shard_size]
         self.output_offset = torch.tensor(
-            [
-                0,
-                shard_size,
-            ],
+            offsets,
             dtype=torch.int32,
             device=next(self.base_layer.parameters()).device,
+        )
+        self.output_offset_cpu = torch.tensor(
+            offsets,
+            dtype=torch.int32,
+            device="cpu",
         )
 
     def set_lora_info(
@@ -330,6 +347,7 @@ class ColumnParallelLinearWithLoRA(BaseLayerWithLoRA):
             x=lora_a_output,
             weights=self.B_buffer,
             output_offset=self.output_offset,
+            output_offset_cpu=self.output_offset_cpu,
             base_output=base_output,
         )
         return lora_output
@@ -380,14 +398,16 @@ class MergedColumnParallelLinearWithLoRA(ColumnParallelLinearWithLoRA):
         self.B_buffer_gate_up = B_buffer
 
         shard_size = self.base_layer.output_partition_sizes[0]
+        offsets = [0, shard_size, 2 * shard_size]
         self.output_offset = torch.tensor(
-            [
-                0,
-                shard_size,
-                2 * shard_size,
-            ],
+            offsets,
             dtype=torch.int32,
             device=next(self.base_layer.parameters()).device,
+        )
+        self.output_offset_cpu = torch.tensor(
+            offsets,
+            dtype=torch.int32,
+            device="cpu",
         )
 
     def apply_lora(self, base_output: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
@@ -396,6 +416,7 @@ class MergedColumnParallelLinearWithLoRA(ColumnParallelLinearWithLoRA):
             gate_up_lora_a=self.A_buffer_gate_up,
             gate_up_lora_b=self.B_buffer_gate_up,
             output_offset=self.output_offset,
+            output_offset_cpu=self.output_offset_cpu,
             base_output=base_output,
         )
         return lora_output
@@ -427,17 +448,22 @@ class QKVParallelLinearWithLoRA(ColumnParallelLinearWithLoRA):
         super().__init__(base_layer, lora_backend)
         q_proj_shard_size = self.base_layer.q_proj_shard_size
         kv_proj_shard_size = self.base_layer.kv_proj_shard_size
+        offsets = [
+            0,
+            q_proj_shard_size,
+            q_proj_shard_size + kv_proj_shard_size,
+            q_proj_shard_size + 2 * kv_proj_shard_size,
+        ]
         self.output_offset = torch.tensor(
-            [
-                0,
-                q_proj_shard_size,
-                q_proj_shard_size + kv_proj_shard_size,
-                q_proj_shard_size + 2 * kv_proj_shard_size,
-            ],
+            offsets,
             dtype=torch.int32,
             device=next(self.base_layer.parameters()).device,
         )
-        self.output_offset_cpu = self.output_offset.cpu()
+        self.output_offset_cpu = torch.tensor(
+            offsets,
+            dtype=torch.int32,
+            device="cpu",
+        )
 
         # For computing number of launched blocks
         self.max_qkv_out_dim = max(q_proj_shard_size, kv_proj_shard_size)
@@ -508,13 +534,16 @@ class RowParallelLinearWithLoRA(BaseLayerWithLoRA):
         self.A_buffer = A_buffer
         self.B_buffer = B_buffer
         output_size = self.base_layer.output_size
+        offsets = [0, output_size]
         self.output_offset = torch.tensor(
-            [
-                0,
-                output_size,
-            ],
+            offsets,
             dtype=torch.int32,
             device=next(self.base_layer.parameters()).device,
+        )
+        self.output_offset_cpu = torch.tensor(
+            offsets,
+            dtype=torch.int32,
+            device="cpu",
         )
 
     def apply_lora(self, base_output: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
@@ -523,6 +552,7 @@ class RowParallelLinearWithLoRA(BaseLayerWithLoRA):
             x=lora_a_output,
             weights=self.B_buffer,
             output_offset=self.output_offset,
+            output_offset_cpu=self.output_offset_cpu,
             base_output=base_output,
         )
         return lora_output
@@ -557,6 +587,7 @@ class RowParallelLinearWithLoRA(BaseLayerWithLoRA):
                 x=lora_a_output,
                 weights=self.B_buffer,
                 output_offset=self.output_offset,
+                output_offset_cpu=self.output_offset_cpu,
                 base_output=output_,
             )
         else:
