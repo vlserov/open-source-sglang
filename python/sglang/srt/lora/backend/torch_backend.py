@@ -46,7 +46,7 @@ class TorchNativeLoRABackend(BaseLoRABackend):
             lora_ranks=self.batch_info.lora_ranks_cpu,
             scaling_tensor=self.batch_info.scalings,
             num_slices=1,
-            batch_info=self.cuda_graph_batch_info,
+            batch_info=self.batch_info,
         )
 
         return output_tensor
@@ -70,7 +70,7 @@ class TorchNativeLoRABackend(BaseLoRABackend):
             lora_ranks=self.batch_info.lora_ranks_cpu,
             slice_offsets=output_offset_cpu,
             base_output=base_output,
-            batch_info=self.cuda_graph_batch_info,
+            batch_info=self.batch_info,
         )
 
         return output_tensor
@@ -87,7 +87,7 @@ class TorchNativeLoRABackend(BaseLoRABackend):
         *args,
         **kwargs,
     ) -> torch.Tensor:
-        num_slices = len(output_offset_cpu)
+        num_slices = len(output_offset_cpu) - 1
         lora_a_output = sgemm_lora_a_fwd(
             inputs=x,
             weights=qkv_lora_a,
@@ -96,7 +96,7 @@ class TorchNativeLoRABackend(BaseLoRABackend):
             lora_ranks=self.batch_info.lora_ranks_cpu,
             scaling_tensor=self.batch_info.scalings,
             num_slices=num_slices,
-            batch_info=self.cuda_graph_batch_info,
+            batch_info=self.batch_info,
         )
 
         output_tensor = sgemm_lora_b_fwd(
@@ -107,7 +107,7 @@ class TorchNativeLoRABackend(BaseLoRABackend):
             lora_ranks=self.batch_info.lora_ranks_cpu,
             slice_offsets=output_offset_cpu,
             base_output=base_output,
-            batch_info=self.cuda_graph_batch_info,
+            batch_info=self.batch_info,
         )
 
         return output_tensor
@@ -122,7 +122,7 @@ class TorchNativeLoRABackend(BaseLoRABackend):
         *args,
         **kwargs,
     ) -> torch.Tensor:
-        num_slices = len(output_offset_cpu)
+        num_slices = len(output_offset_cpu) - 1
         _, weight_out_dim, _ = gate_up_lora_b.shape
         slice_size = weight_out_dim // num_slices
 
@@ -134,7 +134,7 @@ class TorchNativeLoRABackend(BaseLoRABackend):
             lora_ranks=self.batch_info.lora_ranks_cpu,
             scaling_tensor=self.batch_info.scalings,
             num_slices=num_slices,
-            batch_info=self.cuda_graph_batch_info,
+            batch_info=self.batch_info,
         )
 
         output_tensor = sgemm_lora_b_fwd(
@@ -145,7 +145,7 @@ class TorchNativeLoRABackend(BaseLoRABackend):
             lora_ranks=self.batch_info.lora_ranks_cpu,
             slice_offsets=output_offset_cpu,
             base_output=base_output,
-            batch_info=self.cuda_graph_batch_info,
+            batch_info=self.batch_info,
         )
 
         return output_tensor

@@ -174,12 +174,13 @@ def generate_sequence_lengths(
     device = torch.get_default_device() if device is None else device
     with torch.device(device):
         if forward_batch.forward_mode.is_decode():
-            seg_lens = torch.ones(forward_batch.batch_size, dtype=torch.int32)
+            seg_lens = torch.ones(forward_batch.batch_size, dtype=torch.int32, pin_memory=True,)
         elif forward_batch.forward_mode.is_target_verify():
             seg_lens = torch.full(
                 size=(forward_batch.batch_size,),
                 fill_value=forward_batch.spec_info.draft_token_num,
                 dtype=torch.int32,
+                pin_memory=True,
             )
         elif forward_batch.forward_mode.is_extend():
             seg_lens = (
@@ -188,6 +189,7 @@ def generate_sequence_lengths(
                 else torch.tensor(
                     forward_batch.extend_seq_lens_cpu,
                     dtype=torch.int32,
+                    pin_memory=True,
                 )
             )
         else:
