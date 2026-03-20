@@ -44,6 +44,46 @@ def sgemm_lora_a_graph_fwd(
 
     return output
 
+def sgemm_lora_a_embedding_control_fwd(
+    inputs: torch.Tensor,
+    weights: torch.Tensor,
+    weight_indices: torch.Tensor,
+    seg_len_tensor: torch.Tensor,
+    lora_ranks: torch.Tensor,
+    scaling_tensor: torch.Tensor,
+    num_slices: int = 1,
+    batch_info: Optional[LoRABatchInfo] = None,
+):
+    total_seq_len = inputs.shape[0]
+    if weights.numel() == 0:
+        return torch.zeros(total_seq_len, 0, dtype=inputs.dtype, device=inputs.device)
+
+    num_loras, max_rank, _ = weights.shape
+
+    output = torch.zeros(
+        total_seq_len, max_rank, dtype=inputs.dtype, device=inputs.device
+    )
+
+    token_offset = 0
+    for lora_idx, seq_len, rank in zip(
+        weight_indices, seg_len_tensor, lora_ranks[weight_indices]
+    ):
+        if seq_len == 0:
+            continue
+
+        if rank > 0:
+
+            x_seq = inputs[token_offset : token_offset + seq_len]
+            w_seq = weights[lora_idx, : rank, :]
+
+            output[token_offset : token_offset + seq_len, : rank] = (
+                torch.nn.functional.embedding(x_seq, w_seq.t())
+            )
+
+        token_offset += seq_len
+
+    return output
+
 
 def sgemm_lora_a_control_fwd(
     inputs: torch.Tensor,

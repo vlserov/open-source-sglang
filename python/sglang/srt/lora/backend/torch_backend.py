@@ -35,6 +35,28 @@ class TorchNativeLoRABackend(BaseLoRABackend):
     ):
         super().__init__(max_loras_per_batch, device)
 
+    def run_lora_a_embedding(
+        self,
+        input_ids: torch.Tensor,
+        weights: torch.Tensor,
+        vocab_size: int,
+        extra_embeddings: torch.Tensor = None,
+        *args,
+        **kwargs,
+    ) -> torch.Tensor:
+        output_tensor = sgemm_embedding_a_control_fwd(
+            inputs=x,
+            weights=weights,
+            weight_indices=self.batch_info.weight_indices_cpu,
+            seg_len_tensor=self.batch_info.seg_lens_cpu,
+            lora_ranks=self.batch_info.lora_ranks_cpu,
+            scaling_tensor=self.batch_info.scalings,
+            num_slices=1,
+            batch_info=self.batch_info,
+        )
+
+        return output_tensor
+
     def run_lora_a_sgemm(
         self, x: torch.Tensor, weights: torch.Tensor, *args, **kwargs
     ) -> torch.Tensor:
